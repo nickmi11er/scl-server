@@ -175,6 +175,10 @@ func DownloadScl(url, year string, t chan<- *TestGroup) {
 		panic(err)
 	}
 
+	if file == nil || file.Sheets == nil {
+		return
+	}
+
 	for _, sheet := range file.Sheets {
 
 		for ri, row := range sheet.Rows {
