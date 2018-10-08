@@ -156,23 +156,27 @@ func DownloadScl(url, year string, t chan<- *TestGroup) {
 
 	res, err := http.Get(url)
 	if err != nil {
-		panic(err)
+		log.Println(err)
+		return
 	}
 	defer res.Body.Close()
 
 	b, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		panic(err)
+		log.Println(err)
+		return
 	}
 
 	var file, e = xlsx.OpenBinary(b)
 	if err != nil {
-		panic(e)
+		log.Println(e)
+		return
 	}
 
 	group, err := regexp.Compile(`[А-Яа-я]{4}-\d{2}-\d{2}`)
 	if err != nil {
-		panic(err)
+		log.Println(err)
+		return
 	}
 
 	if file == nil || file.Sheets == nil {
