@@ -168,7 +168,7 @@ func DownloadScl(url, year string, t chan<- *TestGroup) {
 	}
 
 	var file, e = xlsx.OpenBinary(b)
-	if err != nil {
+	if e != nil {
 		log.Println(e)
 		return
 	}
