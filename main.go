@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+	"io"
 	"log"
 	"net/http"
 	"scl_preparator/scl"
 	"strconv"
+	"strings"
 )
 
 func HomeRouterHandler(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +36,7 @@ func RootGroupsHandler(w http.ResponseWriter, r *http.Request) {
 
 	inst, ok := r.URL.Query()["inst"]
 	if ok && len(inst[0]) > 0 {
-		err := col.Find(bson.M{"institute":inst[0]}).Distinct("rootgroup", &rootGroups)
+		err := col.Find(bson.M{"institute": inst[0]}).Distinct("rootgroup", &rootGroups)
 		if err != nil {
 			fmt.Fprintf(w, "Groups not found")
 			return
@@ -57,7 +60,7 @@ func GroupsHandler(w http.ResponseWriter, r *http.Request) {
 	rGroup, ok := r.URL.Query()["rootGroup"]
 
 	if ok && len(rGroup[0]) > 0 {
-		err := col.Find(bson.M{"rootgroup":rGroup[0]}).Distinct("name", &groups)
+		err := col.Find(bson.M{"rootgroup": rGroup[0]}).Distinct("name", &groups)
 		if err != nil {
 			fmt.Fprintf(w, "Groups not found")
 			return
@@ -90,6 +93,7 @@ func SclUpdateHandler(w http.ResponseWriter, r *http.Request) {
 		scl.UpdateFormSite(inst[0], year[0])
 	}
 }
+
 func SclHandler(w http.ResponseWriter, r *http.Request) {
 	year, ok := r.URL.Query()["year"]
 	if !ok || len(year[0]) < 1 {
@@ -124,7 +128,9 @@ func SclHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 }
+
 var col *mgo.Collection
+
 func main() {
 	session, err := mgo.Dial("localhost")
 	if err != nil {
@@ -143,9 +149,72 @@ func main() {
 	http.HandleFunc("/institutes", InstitutesHandler)
 	http.HandleFunc("/groups", GroupsHandler)
 	http.HandleFunc("/rootGroups", RootGroupsHandler)
+	http.HandleFunc("/scl/upfile/", SclUpfileHandler)
 
 	err = http.ListenAndServe(":9000", nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
+	}
+}
+
+const FileForm = `
+<html>
+    <head>
+    <title></title>
+    </head>
+    <body>
+        <form id="sclUpload" action="/scl/upfile" method="post" enctype="multipart/form-data" onSubmit="return setUrl();">
+			File:<input type="file" name="sclfile"><br>
+            Год:<input id="year" type="text" name="year"><br>
+            Институт:<input id="inst" type="text" name="inst"><br>
+            <input type="submit" value="Загрузить">
+        </form>
+    </body>
+	<script type=text/javascript>
+		function setUrl() {
+			document.getElementById('sclUpload').action = "/scl/upfile/" + document.getElementById('year').value + "/" + document.getElementById('inst').value
+		}
+	</script>
+</html>`
+
+func SclUpfileHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, FileForm)
+	case http.MethodPost:
+		r.ParseForm()
+
+		params := strings.Split(strings.Replace(r.URL.Path, "/scl/upfile/", "", 1), "/")
+
+		year := params[0]
+		if year == "" {
+			fmt.Fprintf(w, "Url Param 'year' is missing")
+			return
+		}
+
+		inst := params[1]
+		if inst == "" {
+			fmt.Fprintf(w, "Url Param 'inst' is missing")
+			return
+		}
+
+		var Buf bytes.Buffer
+		file, header, err := r.FormFile("sclfile")
+		if err != nil {
+			fmt.Fprintf(w, "Invalid file was supplied")
+			return
+		}
+		defer file.Close()
+		name := strings.Split(header.Filename, ".")
+		if name[1] != "xlsx" {
+			fmt.Fprintf(w, "File should be in .xlsx format")
+			return
+		}
+		fmt.Printf("File name %s\n", name[0])
+		io.Copy(&Buf, file)
+		go scl.ParseFile(Buf.Bytes(), year, inst, name[0])
+		Buf.Reset()
+		return
 	}
 }

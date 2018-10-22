@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 )
 
 var dayOfWeekNames = []string{"Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"}
@@ -138,8 +137,6 @@ func GroupsCollector(t <-chan *TestGroup, col *mgo.Collection) {
 }
 
 func DownloadScl(url, year string, t chan<- *TestGroup) {
-	startDt := time.Now().UnixNano()
-
 	var instituteName string
 	var found = false
 	for k, v := range instituteNames {
@@ -167,6 +164,10 @@ func DownloadScl(url, year string, t chan<- *TestGroup) {
 		return
 	}
 
+	ParseFile(b, year, instituteName, url[strings.LastIndex(url, "/")+1:])
+}
+
+func ParseFile(b []byte, year string, instituteName string, fileName string) {
 	var file, e = xlsx.OpenBinary(b)
 	if e != nil {
 		log.Println(e)
@@ -235,9 +236,5 @@ func DownloadScl(url, year string, t chan<- *TestGroup) {
 			}
 		}
 	}
-
-	cDate := (time.Now().UnixNano() - startDt) / (1000 * 1000)
-	sTime += cDate
-	fmt.Println(completed, url[strings.LastIndex(url, "/")+1:], "	completed: ", cDate)
-
+	fmt.Println(completed, fileName, "completed")
 }
