@@ -9,7 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"scl_preparator/scl"
+	"scl-server/scl"
 	"strconv"
 	"strings"
 )
@@ -113,15 +113,32 @@ func SclHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gp := scl.TestGroup{}
+	weeksLeft, ok := r.URL.Query()["weeksLeft"]
+	if !ok || len(dayOfWeek[0]) < 1 {
+		fmt.Fprintf(w, "Url Param 'weeksLeft' is missing")
+		return
+	}
+
+	gp := scl.Group{}
 	err := col.Find(bson.M{"name": group[0], "studyyear": year[0]}).One(&gp)
 	if err != nil {
 		fmt.Fprintf(w, "Schedule not found")
 	} else {
 		dowi, err := strconv.ParseInt(dayOfWeek[0], 10, 64)
-		if err == nil {
-			day := gp.Week[dowi]
-			jDay, err := json.Marshal(day)
+		wl, err1 := strconv.ParseInt(weeksLeft[0], 10, 64)
+		if err == nil && err1 == nil {
+			subjects := gp.Subjects
+			var filtered []*scl.NewSubject
+
+			for _, subj := range subjects {
+				if dowi == int64(subj.DayOfWeek) {
+					filtered = append(filtered, subj)
+				}
+			}
+
+			filtered = scl.FilterSubjects(filtered, wl)
+			gp.Subjects = filtered
+			jDay, err := json.Marshal(gp)
 			if err == nil {
 				fmt.Fprintf(w, string(jDay))
 			}

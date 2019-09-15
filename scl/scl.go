@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -19,6 +20,7 @@ var instituteNames = map[string]string{
 	"itht":   "ИТХТ",
 	"rts":    "РТС",
 	"kbisp":  "КБиСП",
+	"ikbsp":  "КБиСП",
 	"kib":    "КИБ",
 	"it":     "ИТ",
 	"integu": "ИНТЕГУ",
@@ -32,24 +34,29 @@ type Subject struct {
 	Type     string `json:"type"`
 }
 
+type NewSubject struct {
+	DayOfWeek  int    `json:"day_of_week"`
+	PairNumber string `json:"pair_number"`
+	StartTime  string `json:"start_time"`
+	EndTime    string `json:"end_time"`
+	IsEven     bool   `json:"is_even"`
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Lecturer   string `json:"lecturer"`
+	Class      string `json:"class"`
+}
+
 type DayOfWeek struct {
 	Name     string     `json:"name"`
 	Subjects []*Subject `json:"subjects"`
 }
 
-func generateWeek() []*DayOfWeek {
-	var week []*DayOfWeek
-	for _, name := range dayOfWeekNames {
-		dof := DayOfWeek{}
-		dof.Name = name
-		week = append(week, &dof)
-	}
-	return week
-}
-
 type Group struct {
-	Name string       `json:"gp_name"`
-	Week []*DayOfWeek `json:"week"`
+	Name      string        `json:"name"`
+	StudyYear string        `json:"study_year"`
+	Institute string        `json:"institute"`
+	RootGroup string        `json:"root_group"`
+	Subjects  []*NewSubject `json:"subjects"`
 }
 
 type TestGroup struct {
@@ -74,7 +81,7 @@ var MIREA_SCL_URL = "https://www.mirea.ru/education/schedule-main/schedule/"
 var completed = 0
 var sTime int64 = 0
 
-var t = make(chan *TestGroup)
+var t = make(chan *Group)
 
 func StartGroupCollector(col *mgo.Collection) {
 	go GroupsCollector(t, col)
@@ -119,7 +126,7 @@ func UpdateAllFromSite(year string) {
 	}
 }
 
-func GroupsCollector(t <-chan *TestGroup, col *mgo.Collection) {
+func GroupsCollector(t <-chan *Group, col *mgo.Collection) {
 	for {
 		group := <-t
 
@@ -136,7 +143,7 @@ func GroupsCollector(t <-chan *TestGroup, col *mgo.Collection) {
 	}
 }
 
-func DownloadScl(url, year string, t chan<- *TestGroup) {
+func DownloadScl(url, year string, t chan<- *Group) {
 	var instituteName string
 	var found = false
 	for k, v := range instituteNames {
@@ -148,7 +155,8 @@ func DownloadScl(url, year string, t chan<- *TestGroup) {
 	}
 
 	if !found {
-		instituteName = ""
+		log.Println("Cant find institute for ", url)
+		return
 	}
 
 	res, err := http.Get(url)
@@ -185,51 +193,68 @@ func ParseFile(b []byte, year string, instituteName string, fileName string) {
 	}
 
 	for _, sheet := range file.Sheets {
+		var dayOfWeekCellId int
 
 		for ri, row := range sheet.Rows {
 			for ci, cell := range row.Cells {
 				text := cell.String()
 
+				if text == "День недели" {
+					dayOfWeekCellId = ci
+				}
+
 				if ri == 1 {
 					groups := group.FindAllString(text, -1)
 					for _, gp := range groups {
 
-						resGroup := &TestGroup{
+						resGroup := &Group{
 							StudyYear: year,
 							Name:      gp,
-							Week:      generateWeek(),
 							Institute: instituteName,
 							RootGroup: gp[:len(gp)-6],
 						}
 
-						for wd_index := 3; wd_index < 75; wd_index += 12 {
-							var subs []*Subject
-							for i := 0; i < 12; i++ {
-								sb_name := sheet.Cell(i+wd_index, ci).String()
-								if sb_name == "" {
-									sb_name = "-"
+						var subs []*NewSubject
+						for dayIndex := 3; dayIndex < len(sheet.Rows); dayIndex++ {
+							subjectName := sheet.Cell(dayIndex, ci).String()
+
+							if subjectName != "" {
+
+								subj := new(NewSubject)
+
+								subj.Name = subjectName
+
+								dayOfWeek := getNearestCellString(sheet, dayIndex, dayOfWeekCellId)
+								subj.DayOfWeek = getIndexOfWeekDay(dayOfWeek)
+
+								subj.PairNumber = getNearestCellString(sheet, dayIndex, dayOfWeekCellId+1)
+
+								subj.StartTime = strings.Replace(getNearestCellString(sheet, dayIndex, dayOfWeekCellId+2), "-", ":", 1)
+								subj.EndTime = strings.Replace(getNearestCellString(sheet, dayIndex, dayOfWeekCellId+3), "-", ":", 1)
+
+								subj.IsEven = getNearestCellString(sheet, dayIndex, dayOfWeekCellId+4) == "II"
+
+								sbType := strings.TrimSpace(sheet.Cell(dayIndex, ci+1).String())
+								if sbType == "" {
+									sbType = "-"
 								}
-								sb_class := sheet.Cell(i+wd_index, ci+3).String()
-								if sb_class == "" {
-									sb_class = "-"
+								subj.Type = sbType
+
+								lecturer := strings.TrimSpace(sheet.Cell(dayIndex, ci+2).String())
+								if lecturer == "" {
+									lecturer = "-"
 								}
-								sb_lecturer := sheet.Cell(i+wd_index, ci+2).String()
-								if sb_lecturer == "" {
-									sb_lecturer = "-"
+								subj.Lecturer = lecturer
+
+								class := strings.TrimSpace(sheet.Cell(dayIndex, ci+3).String())
+								if class == "" {
+									class = "-"
 								}
-								sb_type := sheet.Cell(i+wd_index, ci+1).String()
-								if sb_type == "" {
-									sb_type = "-"
-								}
-								s := new(Subject)
-								s.Name = sb_name
-								s.Class = sb_class
-								s.Lecturer = sb_lecturer
-								s.Type = sb_type
-								subs = append(subs, s)
+								subj.Class = class
+								subs = append(subs, subj)
 							}
-							resGroup.Week[indexes[wd_index]].Subjects = subs
 						}
+						resGroup.Subjects = subs
 						t <- resGroup
 					}
 				}
@@ -237,4 +262,59 @@ func ParseFile(b []byte, year string, instituteName string, fileName string) {
 		}
 	}
 	fmt.Println(completed, fileName, "completed")
+}
+
+func getNearestCellString(sheet *xlsx.Sheet, rowId int, cellId int) string {
+	for i := rowId; i > 0; i-- {
+		text := sheet.Cell(i, cellId).String()
+		if text != "" {
+			return strings.TrimSpace(text)
+		}
+	}
+	return ""
+}
+
+func getIndexOfWeekDay(expectedWdName string) int {
+	for i, wdName := range dayOfWeekNames {
+		if strings.EqualFold(expectedWdName, wdName) {
+			return i
+		}
+	}
+	return -1
+}
+
+func FilterSubjects(subjects []*NewSubject, weeksLeft int64) []*NewSubject {
+	pt := regexp.MustCompile(`((кр|кр\s*\.)\s*([0-9]+(?:,|\s*[0-9]+)*)+\s*(н)+\s*)`)
+	var result []*NewSubject
+	isEven := weeksLeft%2 == 0
+
+	for _, subj := range subjects {
+
+		groups := pt.FindStringSubmatch(subj.Name)
+		if subj.IsEven != isEven {
+			continue
+		}
+		if groups == nil && subj.Name != "" && subj.Name != "-" {
+			result = append(result, subj)
+			continue
+		}
+		if groups != nil && groups[3] != "" {
+			weeks := strings.Split(groups[3], ",")
+			var isInWeeksRange bool
+			for _, week := range weeks {
+				if week == strconv.FormatInt(weeksLeft, 10) {
+					isInWeeksRange = true
+				}
+			}
+
+			subj.Name = pt.ReplaceAllString(subj.Name, "")
+			if isInWeeksRange && groups[2] == "" {
+				result = append(result, subj)
+			}
+			if !isInWeeksRange && groups[2] != "" {
+				result = append(result, subj)
+			}
+		}
+	}
+	return result
 }
