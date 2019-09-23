@@ -284,7 +284,7 @@ func getIndexOfWeekDay(expectedWdName string) int {
 }
 
 func FilterSubjects(subjects []*NewSubject, weeksLeft int64) []*NewSubject {
-	pt := regexp.MustCompile(`((кр|кр\s*\.)\s*([0-9]+(?:,|\s*[0-9]+)*)+\s*(н)+\s*)`)
+	pt := regexp.MustCompile(`((кр|кр\s*\.)?\s*([0-9]+(?:,|\s*[0-9]+)*)+\s*(н)+\s*)`)
 	var result []*NewSubject
 	isEven := weeksLeft%2 == 0
 
