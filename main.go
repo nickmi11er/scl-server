@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 	"io"
 	"log"
 	"net/http"
 	"scl-server/scl"
 	"strconv"
 	"strings"
+
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func HomeRouterHandler(w http.ResponseWriter, r *http.Request) {

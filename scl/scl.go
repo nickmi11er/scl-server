@@ -2,15 +2,16 @@ package scl
 
 import (
 	"fmt"
-	"github.com/tealeg/xlsx"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/tealeg/xlsx"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 var dayOfWeekNames = []string{"Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"}
@@ -147,7 +148,7 @@ func DownloadScl(url, year string, t chan<- *Group) {
 	var instituteName string
 	var found = false
 	for k, v := range instituteNames {
-		if strings.Contains(strings.ToLower(url), k) {
+		if strings.Contains(strings.ToLower(url), k) || strings.Contains(strings.ToLower(url), strings.ToLower(v)) {
 			instituteName = v
 			found = true
 			break
@@ -195,15 +196,17 @@ func ParseFile(b []byte, year string, instituteName string, fileName string) {
 	for _, sheet := range file.Sheets {
 		var dayOfWeekCellId int
 
-		for ri, row := range sheet.Rows {
-			for ci, cell := range row.Cells {
+		var rowIndex = 0
+		sheet.ForEachRow(func(row *xlsx.Row) error {
+			var cellIndex = 0
+			row.ForEachCell(func(cell *xlsx.Cell) error {
 				text := cell.String()
 
 				if text == "День недели" {
-					dayOfWeekCellId = ci
+					dayOfWeekCellId = cellIndex
 				}
 
-				if ri == 1 {
+				if rowIndex == 1 {
 					groups := group.FindAllString(text, -1)
 					for _, gp := range groups {
 
@@ -215,60 +218,81 @@ func ParseFile(b []byte, year string, instituteName string, fileName string) {
 						}
 
 						var subs []*NewSubject
-						for dayIndex := 3; dayIndex < len(sheet.Rows); dayIndex++ {
-							subjectName := sheet.Cell(dayIndex, ci).String()
+						for dayIndex := 3; dayIndex < sheet.MaxRow; dayIndex++ {
+							cell, error := sheet.Cell(dayIndex, cellIndex)
+							if error == nil {
+								subjectName := cell.String()
 
-							if subjectName != "" {
+								if subjectName != "" {
 
-								subj := new(NewSubject)
+									subj := new(NewSubject)
 
-								subj.Name = subjectName
+									subj.Name = subjectName
 
-								dayOfWeek := getNearestCellString(sheet, dayIndex, dayOfWeekCellId)
-								subj.DayOfWeek = getIndexOfWeekDay(dayOfWeek)
+									dayOfWeek := getNearestCellString(sheet, dayIndex, dayOfWeekCellId)
+									subj.DayOfWeek = getIndexOfWeekDay(dayOfWeek)
 
-								subj.PairNumber = getNearestCellString(sheet, dayIndex, dayOfWeekCellId+1)
+									subj.PairNumber = getNearestCellString(sheet, dayIndex, dayOfWeekCellId+1)
 
-								subj.StartTime = strings.Replace(getNearestCellString(sheet, dayIndex, dayOfWeekCellId+2), "-", ":", 1)
-								subj.EndTime = strings.Replace(getNearestCellString(sheet, dayIndex, dayOfWeekCellId+3), "-", ":", 1)
+									subj.StartTime = strings.Replace(getNearestCellString(sheet, dayIndex, dayOfWeekCellId+2), "-", ":", 1)
+									subj.EndTime = strings.Replace(getNearestCellString(sheet, dayIndex, dayOfWeekCellId+3), "-", ":", 1)
 
-								subj.IsEven = getNearestCellString(sheet, dayIndex, dayOfWeekCellId+4) == "II"
+									subj.IsEven = getNearestCellString(sheet, dayIndex, dayOfWeekCellId+4) == "II"
 
-								sbType := strings.TrimSpace(sheet.Cell(dayIndex, ci+1).String())
-								if sbType == "" {
-									sbType = "-"
+									sbCell, error := sheet.Cell(dayIndex, cellIndex+1)
+									if error == nil {
+										sbType := strings.TrimSpace(sbCell.String())
+										if sbType == "" {
+											sbType = "-"
+										}
+										subj.Type = sbType
+									}
+
+									lecturerCell, error := sheet.Cell(dayIndex, cellIndex+2)
+									if error == nil {
+										lecturer := strings.TrimSpace(lecturerCell.String())
+										if lecturer == "" {
+											lecturer = "-"
+										}
+										subj.Lecturer = lecturer
+									}
+
+									classCell, error := sheet.Cell(dayIndex, cellIndex+3)
+									if error == nil {
+										class := strings.TrimSpace(classCell.String())
+										if class == "" {
+											class = "-"
+										}
+										subj.Class = class
+									}
+									subs = append(subs, subj)
 								}
-								subj.Type = sbType
 
-								lecturer := strings.TrimSpace(sheet.Cell(dayIndex, ci+2).String())
-								if lecturer == "" {
-									lecturer = "-"
-								}
-								subj.Lecturer = lecturer
-
-								class := strings.TrimSpace(sheet.Cell(dayIndex, ci+3).String())
-								if class == "" {
-									class = "-"
-								}
-								subj.Class = class
-								subs = append(subs, subj)
 							}
 						}
 						resGroup.Subjects = subs
 						t <- resGroup
 					}
 				}
-			}
-		}
+
+				cellIndex++
+				return nil
+			})
+			rowIndex++
+			return nil
+		})
 	}
 	fmt.Println(completed, fileName, "completed")
 }
 
 func getNearestCellString(sheet *xlsx.Sheet, rowId int, cellId int) string {
 	for i := rowId; i > 0; i-- {
-		text := sheet.Cell(i, cellId).String()
-		if text != "" {
-			return strings.TrimSpace(text)
+		cell, error := sheet.Cell(i, cellId)
+		if error == nil {
+			text := cell.String()
+			if text != "" {
+				return strings.TrimSpace(text)
+			}
 		}
 	}
 	return ""
