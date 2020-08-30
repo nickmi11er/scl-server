@@ -306,7 +306,7 @@ func getIndexOfWeekDay(expectedWdName string) int {
 	return -1
 }
 
-var pt = regexp.MustCompile(`((кр|кр\s*\.|\s*)\s*((?:[0-9]+-[0-9]+)|(?:[0-9]+(?:,|\s*[0-9]+)*))+\s*(н)+\s*)`)
+var pt = regexp.MustCompile(`((кр|кр\s*\.)?\s*((?:[0-9]+-[0-9]+)|(?:[0-9]+(?:,|\s*[0-9]+)*))+\s*(н)+\s*)`)
 
 func FilterSubjects(subjects []*NewSubject, weeksLeft int64) []*NewSubject {
 	var result []*NewSubject
