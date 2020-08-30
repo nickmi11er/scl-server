@@ -172,7 +172,6 @@ func DownloadScl(url, year string, t chan<- *Group) {
 		log.Println(err)
 		return
 	}
-
 	ParseFile(b, year, instituteName, url[strings.LastIndex(url, "/")+1:])
 }
 
@@ -307,8 +306,9 @@ func getIndexOfWeekDay(expectedWdName string) int {
 	return -1
 }
 
+var pt = regexp.MustCompile(`((кр|кр\s*\.|\s*)\s*((?:[0-9]+-[0-9]+)|(?:[0-9]+(?:,|\s*[0-9]+)*))+\s*(н)+\s*)`)
+
 func FilterSubjects(subjects []*NewSubject, weeksLeft int64) []*NewSubject {
-	pt := regexp.MustCompile(`((кр|кр\s*\.)\s*([0-9]+(?:,|\s*[0-9]+)*)+\s*(н)+\s*)`)
 	var result []*NewSubject
 	isEven := weeksLeft%2 == 0
 
@@ -323,14 +323,24 @@ func FilterSubjects(subjects []*NewSubject, weeksLeft int64) []*NewSubject {
 			continue
 		}
 		if groups != nil && groups[3] != "" {
-			weeks := strings.Split(groups[3], ",")
 			var isInWeeksRange bool
-			for _, week := range weeks {
-				if week == strconv.FormatInt(weeksLeft, 10) {
-					isInWeeksRange = true
+			if strings.Contains(groups[3], "-") {
+				weeksRange := strings.Split(groups[3], "-")
+				start, _ := strconv.ParseInt(weeksRange[0], 10, 32)
+				end, _ := strconv.ParseInt(weeksRange[1], 10, 32)
+				for i := start; i <= end; i++ {
+					if i == weeksLeft {
+						isInWeeksRange = true
+					}
+				}
+			} else {
+				weeks := strings.Split(groups[3], ",")
+				for _, week := range weeks {
+					if week == strconv.FormatInt(weeksLeft, 10) {
+						isInWeeksRange = true
+					}
 				}
 			}
-
 			subj.Name = pt.ReplaceAllString(subj.Name, "")
 			if isInWeeksRange && groups[2] == "" {
 				result = append(result, subj)
